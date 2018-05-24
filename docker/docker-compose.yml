@@ -1,0 +1,41 @@
+version: '3'
+services:
+  warehouses:
+    image: warehouses
+    build:
+      context: .
+      dockerfile: Dockerfile.warehouses
+    container_name: warehouses
+    working_dir: /app
+    command: ["sh", "-c", "/utils/wait_for_it.sh warehouses-pg:5432 ; diesel migration run ; cargo run"]
+    volumes:
+      - ..:/app
+      - stq_cargo_cache:/usr/local/cargo
+    environment:
+      - DATABASE_URL=postgresql://warehouses:warehouses@warehouses-pg/warehouses
+    expose:
+      - 8005
+    stdin_open: true
+    depends_on:
+      - warehouses-pg
+
+  warehouses-pg:
+    image: postgres:10
+    container_name: warehouses-pg
+    volumes:
+      - stq-warehouses-postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=warehouses
+      - POSTGRES_DB=warehouses
+      - POSTGRES_PASSWORD=warehouses
+    ports:
+      - "5432:5432"
+
+volumes:
+  stq_cargo_cache:
+  stq-warehouses-postgres-data:
+
+networks:
+  default:
+    external:
+      name: storiqa
