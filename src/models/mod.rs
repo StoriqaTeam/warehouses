@@ -1,13 +1,19 @@
 pub mod warehouse;
 pub use self::warehouse::*;
 
-pub mod warehouse_product;
-pub use self::warehouse_product::*;
+pub mod stock;
+pub use self::stock::*;
 
-pub mod warehouse_user;
-pub use self::warehouse_user::*;
+pub mod role;
+pub use self::role::*;
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Display, PartialEq, FromStr, Hash, Serialize, Deserialize)]
+pub struct UserId(pub i32);
+
+#[derive(Clone, Copy, Debug, Display, PartialEq, Eq, FromStr, Hash, Serialize, Deserialize)]
+pub struct StoreId(pub i32);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ValueContainer<T> {
     pub value: T,
 }

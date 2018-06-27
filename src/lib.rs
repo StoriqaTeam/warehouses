@@ -2,6 +2,8 @@ extern crate bb8;
 extern crate bb8_postgres;
 extern crate chrono;
 extern crate config as config_crate;
+#[macro_use]
+extern crate derive_more;
 extern crate env_logger;
 #[macro_use]
 extern crate failure;
@@ -11,15 +13,18 @@ extern crate hyper;
 extern crate iso_country;
 #[macro_use]
 extern crate log as log_crate;
+extern crate postgres;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate stq_acl;
 extern crate stq_db;
 extern crate stq_http;
 extern crate stq_router;
 extern crate tokio_core;
 extern crate tokio_postgres;
+extern crate uuid;
 
 use bb8_postgres::PostgresConnectionManager;
 use futures::future;
@@ -27,7 +32,6 @@ use futures::prelude::*;
 use hyper::server::Http;
 use std::net::SocketAddr;
 use std::process::exit;
-use std::sync::Arc;
 use tokio_core::reactor::Core;
 use tokio_postgres::TlsMode;
 
@@ -49,15 +53,17 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
     let mut core = Core::new().expect("Unexpected error creating event loop core");
 
     let manager = PostgresConnectionManager::new(config.db.dsn.clone(), || TlsMode::None).unwrap();
-    let db_pool = Arc::new({
+    let db_pool = {
         let remote = core.remote();
-        core.run(
-            bb8::Pool::builder()
-                .max_size(50)
-                .build(manager, remote)
-                .map_err(|e| format_err!("{}", e)),
-        ).expect("Failed to create connection pool")
-    });
+        stq_db::pool::Pool::from(
+            core.run(
+                bb8::Pool::builder()
+                    .max_size(50)
+                    .build(manager, remote)
+                    .map_err(|e| format_err!("{}", e)),
+            ).expect("Failed to create connection pool"),
+        )
+    };
 
     let listen_address = {
         let port = port.unwrap_or(config.listen.port);
@@ -69,7 +75,7 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
             let controller = controller::ControllerImpl::new(db_pool.clone(), config.clone());
 
             // Prepare application
-            let app = Application::new(controller);
+            let app = Application::<errors::Error>::new(controller);
 
             Ok(app)
         })

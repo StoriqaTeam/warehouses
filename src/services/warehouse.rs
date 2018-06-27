@@ -3,59 +3,61 @@ use models::*;
 use repos::*;
 use types::DbPool;
 
+use futures::future;
 use futures::prelude::*;
-use std::sync::Arc;
+use std::rc::Rc;
+
+#[derive(Clone, Debug)]
+pub enum RoleRemoveFilter {
+    Id(RoleId),
+    Meta((UserId, Option<UserRole>)),
+}
 
 pub trait WarehouseService {
-    fn create_warehouse(&self, new_warehouse: WarehouseInserter) -> ServiceFuture<Warehouse>;
-    fn get_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<Option<Warehouse>>;
+    fn create_warehouse(&self, new_warehouse: WarehouseInput) -> ServiceFuture<Warehouse>;
+    fn get_warehouse(&self, warehouse_id: WarehouseIdentifier) -> ServiceFuture<Option<Warehouse>>;
     fn update_warehouse(
         &self,
-        warehouse_id: WarehouseId,
+        warehouse_id: WarehouseIdentifier,
         update_data: WarehouseUpdateData,
     ) -> ServiceFuture<Option<Warehouse>>;
-    fn delete_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<Option<Warehouse>>;
+    fn delete_warehouse(
+        &self,
+        warehouse_id: WarehouseIdentifier,
+    ) -> ServiceFuture<Option<Warehouse>>;
     fn delete_all_warehouses(&self) -> ServiceFuture<Vec<Warehouse>>;
+    fn get_warehouses_for_store(&self, store_id: StoreId) -> ServiceFuture<Vec<Warehouse>>;
 
-    fn add_product_to_warehouse(
+    fn set_product_in_warehouse(
         &self,
         warehouse_id: WarehouseId,
         product_id: ProductId,
-    ) -> ServiceFuture<WarehouseProduct>;
-    fn update_product_in_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-        product_id: ProductId,
-        update_data: WarehouseProductUpdateData,
-    ) -> ServiceFuture<Option<WarehouseProduct>>;
+        quantity: Quantity,
+    ) -> ServiceFuture<Stock>;
     fn get_product_in_warehouse(
         &self,
         warehouse_id: WarehouseId,
         product_id: ProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>>;
-    fn delete_product_from_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-        product_id: ProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>>;
-    fn list_products_in_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-    ) -> ServiceFuture<WarehouseProductMap>;
+    ) -> ServiceFuture<Option<Stock>>;
+    fn list_products_in_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<StockMap>;
 
-    fn get_warehouse_product(
-        &self,
-        warehouse_product_id: WarehouseProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>>;
+    fn get_warehouse_product(&self, warehouse_product_id: StockId) -> ServiceFuture<Option<Stock>>;
 
-    fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<WarehouseProduct>>;
+    /// Find all products with id in all warehouses
+    fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<Stock>>;
+
+    fn get_roles_for_user(&self, user_id: UserId) -> ServiceFuture<Vec<Role>>;
+    fn create_role(&self, item: Role) -> ServiceFuture<Role>;
+    fn remove_role(&self, filter: RoleRemoveFilter) -> ServiceFuture<Option<Role>>;
+    fn remove_all_roles(&self, user_id: UserId) -> ServiceFuture<Vec<Role>>;
 }
 
 #[derive(Clone)]
 pub struct RepoFactory {
-    pub warehouse_repo_factory: Arc<Fn() -> Box<WarehouseRepo> + Send + Sync>,
-    pub warehouse_products_repo_factory: Arc<Fn() -> Box<WarehouseProductsRepo> + Send + Sync>,
-    pub warehouse_users_repo_factory: Arc<Fn() -> Box<WarehouseUsersRepo> + Send + Sync>,
+    pub warehouse_repo_factory: Rc<Fn() -> Box<WarehouseRepo>>,
+    pub warehouse_slug_sequence_factory: Rc<Fn() -> Box<WarehouseSlugSequence>>,
+    pub warehouse_products_repo_factory: Rc<Fn() -> Box<StocksRepo>>,
+    pub warehouse_roles_repo_factory: Rc<Fn() -> Box<RolesRepo>>,
 }
 
 pub struct WarehouseServiceImpl {
@@ -64,128 +66,145 @@ pub struct WarehouseServiceImpl {
 }
 
 impl WarehouseService for WarehouseServiceImpl {
-    fn create_warehouse(&self, new_warehouse: WarehouseInserter) -> ServiceFuture<Warehouse> {
+    fn create_warehouse(&self, new_warehouse: WarehouseInput) -> ServiceFuture<Warehouse> {
         let repo_factory = self.repo_factory.clone();
-        Box::new(self.db_pool.run(move |conn| {
-            (repo_factory.warehouse_repo_factory)()
-                .insert_exactly_one(Box::new(conn), new_warehouse)
-                .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-        }))
+        Box::new(
+            self.db_pool
+                .run({
+                    let new_warehouse = new_warehouse.clone();
+                    move |conn| {
+                        future::ok(conn)
+                            .and_then({
+                                let f = repo_factory.warehouse_slug_sequence_factory.clone();
+                                move |conn| (f)().next_val(conn)
+                            })
+                            .and_then({
+                                let f = repo_factory.warehouse_repo_factory.clone();
+                                move |(slug, conn)| {
+                                    (f)().insert_exactly_one(
+                                        conn,
+                                        new_warehouse.with_slug(WarehouseSlug(slug.to_string())),
+                                    )
+                                }
+                            })
+                    }
+                })
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to create warehouse with data: {:?}",
+                        &new_warehouse
+                    )).into()
+                }),
+        )
     }
 
-    fn get_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<Option<Warehouse>> {
+    fn get_warehouse(&self, warehouse_id: WarehouseIdentifier) -> ServiceFuture<Option<Warehouse>> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_repo_factory)()
-                        .select(
-                            Box::new(conn),
-                            WarehouseFilter {
-                                id: Some(warehouse_id.into()),
-                                ..Default::default()
-                            },
-                        )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                    (repo_factory.warehouse_repo_factory)().select(conn, warehouse_id.into())
                 })
                 .map(|mut v| v.pop()),
+        )
+    }
+
+    fn get_warehouses_for_store(&self, store_id: StoreId) -> ServiceFuture<Vec<Warehouse>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_repo_factory)().select(
+                        conn,
+                        WarehouseFilter {
+                            store_id: Some(store_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to get warehouses for store: {}",
+                        store_id.0
+                    )).into()
+                }),
         )
     }
 
     fn update_warehouse(
         &self,
-        warehouse_id: WarehouseId,
+        warehouse_id: WarehouseIdentifier,
         update_data: WarehouseUpdateData,
     ) -> ServiceFuture<Option<Warehouse>> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_repo_factory)()
-                        .update(
-                            Box::new(conn),
+                .run({
+                    let update_data = update_data.clone();
+                    let warehouse_id = warehouse_id.clone();
+                    move |conn| {
+                        (repo_factory.warehouse_repo_factory)().update(
+                            conn,
                             WarehouseUpdater {
-                                mask: WarehouseFilter {
-                                    id: Some(warehouse_id.into()),
-                                    ..Default::default()
-                                },
+                                mask: warehouse_id.into(),
                                 data: update_data,
                             },
                         )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                    }
                 })
-                .map(|mut v| v.pop()),
+                .map(|mut v| v.pop())
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to update warehouse {:?} with data {:?}",
+                        warehouse_id, &update_data
+                    )).into()
+                }),
         )
     }
 
-    fn delete_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<Option<Warehouse>> {
+    fn delete_warehouse(
+        &self,
+        warehouse_id: WarehouseIdentifier,
+    ) -> ServiceFuture<Option<Warehouse>> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_repo_factory)()
-                        .delete(
-                            Box::new(conn),
-                            WarehouseFilter {
-                                id: Some(warehouse_id.into()),
-                                ..Default::default()
-                            },
-                        )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                .run({
+                    let warehouse_id = warehouse_id.clone();
+                    move |conn| {
+                        (repo_factory.warehouse_repo_factory)().delete(conn, warehouse_id.into())
+                    }
                 })
-                .map(|mut v| v.pop()),
+                .map(|mut v| v.pop())
+                .map_err(move |e| {
+                    e.context(format!("Failed to delete warehouse {:?}", warehouse_id))
+                        .into()
+                }),
         )
     }
 
     fn delete_all_warehouses(&self) -> ServiceFuture<Vec<Warehouse>> {
         let repo_factory = self.repo_factory.clone();
-        Box::new(self.db_pool.run(move |conn| {
-            (repo_factory.warehouse_repo_factory)()
-                .delete(
-                    Box::new(conn),
-                    WarehouseFilter {
-                        ..Default::default()
-                    },
-                )
-                .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-        }))
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_repo_factory)().delete(
+                        conn,
+                        WarehouseFilter {
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map_err(|e| e.context("Failed to delete all warehouses").into()),
+        )
     }
 
-    fn add_product_to_warehouse(
+    fn set_product_in_warehouse(
         &self,
         warehouse_id: WarehouseId,
         product_id: ProductId,
-    ) -> ServiceFuture<WarehouseProduct> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(self.db_pool.run({
-            let repo_factory = repo_factory.clone();
-            move |conn| {
-                let repo = (repo_factory.warehouse_products_repo_factory)();
-
-                repo.insert_exactly_one(
-                    Box::new(conn),
-                    WarehouseProductInserter {
-                        warehouse_id,
-                        product_id,
-                        quantity: Quantity(0),
-                    },
-                ).map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                    .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-            }
-        }))
-    }
-
-    fn update_product_in_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-        product_id: ProductId,
-        update_data: WarehouseProductUpdateData,
-    ) -> ServiceFuture<Option<WarehouseProduct>> {
+        quantity: Quantity,
+    ) -> ServiceFuture<Stock> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
@@ -194,132 +213,204 @@ impl WarehouseService for WarehouseServiceImpl {
                     move |conn| {
                         let repo = (repo_factory.warehouse_products_repo_factory)();
 
-                        repo.update(
-                            Box::new(conn),
-                            WarehouseProductUpdater {
-                                mask: WarehouseProductFilter {
-                                    warehouse_id: Some(warehouse_id.into()),
-                                    product_id: Some(product_id.into()),
-                                    ..Default::default()
-                                },
-                                data: update_data,
+                        repo.insert_exactly_one(
+                            conn,
+                            Stock {
+                                id: StockId::new(),
+                                warehouse_id,
+                                product_id,
+                                quantity,
                             },
-                        ).map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                            .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                        )
                     }
                 })
-                .map(|mut v| v.pop()),
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to set product {} in warehouse {} to quantity {}",
+                        product_id.0, warehouse_id.0, quantity.0
+                    )).into()
+                }),
         )
     }
     fn get_product_in_warehouse(
         &self,
         warehouse_id: WarehouseId,
         product_id: ProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>> {
+    ) -> ServiceFuture<Option<Stock>> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)()
-                        .select(
-                            Box::new(conn),
-                            WarehouseProductFilter {
-                                warehouse_id: Some(warehouse_id.into()),
-                                product_id: Some(product_id.into()),
-                                ..Default::default()
-                            },
-                        )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                    (repo_factory.warehouse_products_repo_factory)().select(
+                        conn,
+                        StockFilter {
+                            warehouse_id: Some(warehouse_id.into()),
+                            product_id: Some(product_id.into()),
+                            ..Default::default()
+                        },
+                    )
                 })
-                .map(|mut warehouse_products| warehouse_products.pop()),
-        )
-    }
-    fn delete_product_from_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-        product_id: ProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)()
-                        .delete(
-                            Box::new(conn),
-                            WarehouseProductFilter {
-                                warehouse_id: Some(warehouse_id.into()),
-                                product_id: Some(product_id.into()),
-                                ..Default::default()
-                            },
-                        )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-                })
-                .map(|mut warehouse_products| warehouse_products.pop()),
-        )
-    }
-    fn list_products_in_warehouse(
-        &self,
-        warehouse_id: WarehouseId,
-    ) -> ServiceFuture<WarehouseProductMap> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)()
-                        .select(
-                            Box::new(conn),
-                            WarehouseProductFilter {
-                                warehouse_id: Some(warehouse_id.into()),
-                                ..Default::default()
-                            },
-                        )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-                })
-                .map(|v| {
-                    v.into_iter()
-                        .map(<(ProductId, WarehouseProductMeta)>::from)
-                        .collect::<WarehouseProductMap>()
+                .map(|mut warehouse_products| warehouse_products.pop())
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to get product {} in warehouse {}",
+                        product_id.0, warehouse_id.0
+                    )).into()
                 }),
         )
     }
-    fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<WarehouseProduct>> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(self.db_pool.run(move |conn| {
-            (repo_factory.warehouse_products_repo_factory)()
-                .select(
-                    Box::new(conn),
-                    WarehouseProductFilter {
-                        product_id: Some(product_id.into()),
-                        ..Default::default()
-                    },
-                )
-                .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
-        }))
-    }
-    fn get_warehouse_product(
-        &self,
-        warehouse_product_id: WarehouseProductId,
-    ) -> ServiceFuture<Option<WarehouseProduct>> {
+    fn list_products_in_warehouse(&self, warehouse_id: WarehouseId) -> ServiceFuture<StockMap> {
         let repo_factory = self.repo_factory.clone();
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)()
-                        .select(
-                            Box::new(conn),
-                            WarehouseProductFilter {
-                                id: Some(warehouse_product_id.into()),
-                                ..Default::default()
+                    (repo_factory.warehouse_products_repo_factory)().select(
+                        conn,
+                        StockFilter {
+                            warehouse_id: Some(warehouse_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map(|v| {
+                    v.into_iter()
+                        .map(<(ProductId, StockMeta)>::from)
+                        .collect::<StockMap>()
+                })
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to list products in warehouse {}",
+                        warehouse_id.0
+                    )).into()
+                }),
+        )
+    }
+    fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<Stock>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_products_repo_factory)().select(
+                        conn,
+                        StockFilter {
+                            product_id: Some(product_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to find warehouse products with product_id {}",
+                        product_id.0
+                    )).into()
+                }),
+        )
+    }
+    fn get_warehouse_product(&self, warehouse_product_id: StockId) -> ServiceFuture<Option<Stock>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_products_repo_factory)().select(
+                        conn,
+                        StockFilter {
+                            id: Some(warehouse_product_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map(|mut v| v.pop())
+                .map_err(move |e| {
+                    e.context(format!(
+                        "Failed to get warehouse product {}",
+                        warehouse_product_id.0
+                    )).into()
+                }),
+        )
+    }
+
+    fn get_roles_for_user(&self, user_id: UserId) -> ServiceFuture<Vec<Role>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_roles_repo_factory)().select(
+                        conn,
+                        RoleFilter {
+                            user_id: Some(user_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map_err(move |e| {
+                    e.context(format!("Failed to get roles for user {}", user_id.0))
+                        .into()
+                }),
+        )
+    }
+    fn create_role(&self, item: Role) -> ServiceFuture<Role> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run({
+                    let item = item.clone();
+                    move |conn| {
+                        (repo_factory.warehouse_roles_repo_factory)().insert_exactly_one(conn, item)
+                    }
+                })
+                .map_err(move |e| {
+                    e.context(format!("Failed to create role: {:?}", item))
+                        .into()
+                }),
+        )
+    }
+    fn remove_role(&self, filter: RoleRemoveFilter) -> ServiceFuture<Option<Role>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run({
+                    let filter = filter.clone();
+                    move |conn| {
+                        (repo_factory.warehouse_roles_repo_factory)().delete(
+                            conn,
+                            match filter {
+                                RoleRemoveFilter::Id(id) => RoleFilter {
+                                    id: Some(id).map(From::from),
+                                    ..Default::default()
+                                },
+                                RoleRemoveFilter::Meta((user_id, role)) => RoleFilter {
+                                    user_id: Some(user_id).map(From::from),
+                                    role: role.map(From::from),
+                                    ..Default::default()
+                                },
                             },
                         )
-                        .map(|(v, conn)| (v, conn.unwrap_tokio_postgres()))
-                        .map_err(|(e, conn)| (e, conn.unwrap_tokio_postgres()))
+                    }
                 })
-                .map(|mut v| v.pop()),
+                .map(|mut v| v.pop())
+                .map_err(move |e| {
+                    e.context(format!("Failed to remove role: {:?}", filter))
+                        .into()
+                }),
+        )
+    }
+    fn remove_all_roles(&self, user_id: UserId) -> ServiceFuture<Vec<Role>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.warehouse_roles_repo_factory)().delete(
+                        conn,
+                        RoleFilter {
+                            user_id: Some(user_id.into()),
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map_err(move |e| {
+                    e.context(format!("Failed to remove all roles for user {}", user_id.0))
+                        .into()
+                }),
         )
     }
 }

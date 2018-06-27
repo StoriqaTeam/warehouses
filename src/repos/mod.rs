@@ -1,8 +1,8 @@
-pub mod warehouse;
-pub use self::warehouse::*;
+pub mod warehouses;
+pub use self::warehouses::*;
 
-pub mod warehouse_products;
-pub use self::warehouse_products::*;
+pub mod stocks;
+pub use self::stocks::*;
 
-pub mod warehouse_users;
-pub use self::warehouse_users::*;
+pub mod roles;
+pub use self::roles::*;

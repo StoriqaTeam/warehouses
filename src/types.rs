@@ -1,5 +1,3 @@
-use bb8;
-use bb8_postgres;
-use std::sync::Arc;
+use stq_db;
 
-pub type DbPool = Arc<bb8::Pool<bb8_postgres::PostgresConnectionManager>>;
+pub type DbPool = stq_db::pool::Pool;
