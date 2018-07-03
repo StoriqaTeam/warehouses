@@ -13,6 +13,7 @@ services:
       - stq_cargo_cache:/usr/local/cargo
     environment:
       - DATABASE_URL=postgresql://warehouses:warehouses@warehouses-pg/warehouses
+      - "RUST_LOG=warehouses=debug"
     expose:
       - 8005
     stdin_open: true

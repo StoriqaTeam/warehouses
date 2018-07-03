@@ -7,8 +7,9 @@ extern crate warehouses_lib as lib;
 
 use self::futures::prelude::*;
 use self::rand::Rng;
-use self::stq_http::client::{Client as HttpClient, ClientHandle as HttpClientHandle,
-                             Config as HttpConfig};
+use self::stq_http::client::{
+    Client as HttpClient, ClientHandle as HttpClientHandle, Config as HttpConfig,
+};
 use self::tokio_core::reactor::Core;
 use std::sync::mpsc::channel;
 use std::thread;
