@@ -236,18 +236,23 @@ impl Controller for ControllerImpl {
                             service.find_by_product_id(product_id)
                         }),
                         (Get, Some(Route::RolesByUserId { user_id })) => {
+                            debug!("Received request to get roles by user id {}", user_id);
                             serialize_future({ service.get_roles_for_user(user_id) })
                         }
                         (Post, Some(Route::Roles)) => serialize_future({
-                            parse_body::<Role>(payload)
-                                .and_then(move |data| service.create_role(data))
+                            parse_body::<Role>(payload).and_then(move |data| {
+                                debug!("Received request to create role {:?}", data);
+                                service.create_role(data)
+                            })
                         }),
                         (Delete, Some(Route::RolesByUserId { user_id })) => serialize_future({
                             parse_body::<Option<UserRole>>(payload).and_then(move |role| {
+                                debug!("Received request to delete role {:?}", role);
                                 service.remove_role(RoleRemoveFilter::Meta((user_id, role)))
                             })
                         }),
                         (Delete, Some(Route::RoleById { role_id })) => {
+                            debug!("Received request to delete role by id {}", role_id);
                             serialize_future({ service.remove_role(RoleRemoveFilter::Id(role_id)) })
                         }
                         // Fallback
