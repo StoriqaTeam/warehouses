@@ -1,7 +1,6 @@
 use super::StoreId;
 use super::ValueContainer;
 use geo::Point as GeoPoint;
-use iso_country::Country;
 use stq_db::statement::*;
 use tokio_postgres;
 use uuid::Uuid;
@@ -48,7 +47,7 @@ pub struct Warehouse {
     pub location: Option<GeoPoint<f64>>,
     pub administrative_area_level_1: Option<String>,
     pub administrative_area_level_2: Option<String>,
-    pub country: Option<Country>,
+    pub country: Option<String>,
     pub locality: Option<String>,
     pub political: Option<String>,
     pub postal_code: Option<String>,
@@ -68,8 +67,7 @@ impl From<tokio_postgres::rows::Row> for Warehouse {
             location: v.get(LOCATION_COLUMN),
             administrative_area_level_1: v.get(ADMINISTRATIVE_AREA_LEVEL_1_COLUMN),
             administrative_area_level_2: v.get(ADMINISTRATIVE_AREA_LEVEL_2_COLUMN),
-            country: v.get::<Option<String>, _>(COUNTRY_COLUMN)
-                .map(|v| v.parse().unwrap()),
+            country: v.get(COUNTRY_COLUMN),
             locality: v.get(LOCALITY_COLUMN),
             political: v.get(POLITICAL_COLUMN),
             postal_code: v.get(POSTAL_CODE_COLUMN),
@@ -156,7 +154,7 @@ pub struct WarehouseInput {
     pub location: Option<GeoPoint<f64>>,
     pub administrative_area_level_1: Option<String>,
     pub administrative_area_level_2: Option<String>,
-    pub country: Option<Country>,
+    pub country: Option<String>,
     pub locality: Option<String>,
     pub political: Option<String>,
     pub postal_code: Option<String>,
@@ -238,7 +236,7 @@ pub struct WarehouseFilter {
     pub location: Option<ValueContainer<Option<GeoPoint<f64>>>>,
     pub administrative_area_level_1: Option<ValueContainer<Option<String>>>,
     pub administrative_area_level_2: Option<ValueContainer<Option<String>>>,
-    pub country: Option<ValueContainer<Option<Country>>>,
+    pub country: Option<ValueContainer<Option<String>>>,
     pub locality: Option<ValueContainer<Option<String>>>,
     pub political: Option<ValueContainer<Option<String>>>,
     pub postal_code: Option<ValueContainer<Option<String>>>,
@@ -346,7 +344,7 @@ pub struct WarehouseUpdateData {
     pub location: Option<ValueContainer<Option<GeoPoint<f64>>>>,
     pub administrative_area_level_1: Option<ValueContainer<Option<String>>>,
     pub administrative_area_level_2: Option<ValueContainer<Option<String>>>,
-    pub country: Option<ValueContainer<Option<Country>>>,
+    pub country: Option<ValueContainer<Option<String>>>,
     pub locality: Option<ValueContainer<Option<String>>>,
     pub political: Option<ValueContainer<Option<String>>>,
     pub postal_code: Option<ValueContainer<Option<String>>>,
@@ -395,7 +393,7 @@ impl Updater for WarehouseUpdater {
         }
 
         if let Some(country) = data.country {
-            b = b.with_value(COUNTRY_COLUMN, country.value.map(|v| v.to_string()));
+            b = b.with_value(COUNTRY_COLUMN, country.value);
         }
 
         if let Some(locality) = data.locality {
