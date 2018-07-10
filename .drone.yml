@@ -11,6 +11,7 @@ pipeline:
       - pull_request
       - push
       - tag
+
 ###
 # Test PR
 ###
@@ -25,7 +26,6 @@ pipeline:
     - rm -rf .git && mv -f .git.bak .git
     when:
       event: pull_request
-      branch: [ master, release* ]
   test:
     image: rust:1.26-stretch
     environment:
@@ -113,7 +113,7 @@ pipeline:
     - source: k8s_stage_addr
       target: k8s_addr
     when:
-      branch: release*
+      branch: release
       event: push
 
 ###
@@ -159,7 +159,7 @@ pipeline:
     - source: k8s_prod_addr
       target: k8s_addr
     when:
-      branch: release*
+      branch: release
       event: deployment
       environment: production
 
@@ -190,9 +190,14 @@ pipeline:
         Build {{build.number}} for {{repo.name}} branch {{build.branch}} failed.
       {{/success}}
     when:
-      event: [ push, deployment ]
-      branch: [ master, release ]
-      status: [ failure, success ]
+      event:
+      - push
+      - deployment
+      - tag
+      branch:
+      - master
+      - release
+      status: failure
 
 ###
 # Test services
