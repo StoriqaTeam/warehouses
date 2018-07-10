@@ -63,6 +63,9 @@ pipeline:
     - cargo build --release --locked
     when:
       event: push
+      branch:
+      - master
+      - release
   package:
     image: plugins/docker
     repo: storiqateam/stq-warehouses
@@ -74,7 +77,12 @@ pipeline:
     - docker_password
     dockerfile: docker/Dockerfile.run
     when:
-      event: [ push, tag ]
+      event:
+      - push
+      - tag
+      branch:
+      - master
+      - release
   deploy2nightly:
     image: jackthestripper/drone_k8s_rollout:20180610
     namespace: default
