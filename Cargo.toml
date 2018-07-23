@@ -33,5 +33,6 @@ tokio-postgres = { git = "https://github.com/StoriqaTeam/rust-postgres", feature
 stq_acl = { path = "vendor/libstqbackend/acl" }
 stq_db = { path = "vendor/libstqbackend/db" }
 stq_http = { path = "vendor/libstqbackend/http" }
+stq_logging = { path = "vendor/libstqbackend/logging" }
 stq_router = { path = "vendor/libstqbackend/router" }
 uuid = { version = "*", features = ["serde", "v4"] }
