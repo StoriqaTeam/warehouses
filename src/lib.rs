@@ -21,6 +21,7 @@ extern crate serde_json;
 extern crate stq_acl;
 extern crate stq_db;
 extern crate stq_http;
+extern crate stq_logging;
 extern crate stq_router;
 extern crate tokio_core;
 extern crate tokio_postgres;
@@ -32,10 +33,9 @@ use futures::prelude::*;
 use hyper::server::Http;
 use std::net::SocketAddr;
 use std::process::exit;
+use stq_http::controller::Application;
 use tokio_core::reactor::Core;
 use tokio_postgres::TlsMode;
-
-use stq_http::controller::Application;
 
 mod config;
 pub mod controller;
