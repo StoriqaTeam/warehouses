@@ -1,6 +1,6 @@
-use models::*;
-
+use stq_roles;
 use stq_router::*;
+use stq_types::*;
 
 #[derive(Clone, Debug)]
 pub enum Route {
@@ -24,13 +24,13 @@ pub enum Route {
     StockById {
         warehouse_product_id: StockId,
     },
-    Roles,
-    RoleById {
-        role_id: RoleId,
-    },
-    RolesByUserId {
-        user_id: UserId,
-    },
+    Roles(stq_roles::routing::Route),
+}
+
+impl From<stq_roles::routing::Route> for Route {
+    fn from(v: stq_roles::routing::Route) -> Self {
+        Route::Roles(v)
+    }
 }
 
 pub fn make_router() -> RouteParser<Route> {
@@ -94,19 +94,7 @@ pub fn make_router() -> RouteParser<Route> {
             })
     });
 
-    route_parser.add_route(r"^/roles$", || Route::Roles);
-    route_parser.add_route_with_params(r"^/roles/by-user-id/(\d+)$", |params| {
-        params
-            .get(0)
-            .and_then(|string_id| string_id.parse().ok())
-            .map(|user_id| Route::RolesByUserId { user_id })
-    });
-    route_parser.add_route_with_params(r"^/roles/by-id/(\S+)$", |params| {
-        params
-            .get(0)
-            .and_then(|string_id| string_id.parse().ok())
-            .map(|role_id| Route::RoleById { role_id })
-    });
+    route_parser = stq_roles::routing::add_routes(route_parser);
 
     route_parser
 }

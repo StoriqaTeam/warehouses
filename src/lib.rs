@@ -2,8 +2,6 @@ extern crate bb8;
 extern crate bb8_postgres;
 extern crate chrono;
 extern crate config as config_crate;
-#[macro_use]
-extern crate derive_more;
 extern crate env_logger;
 #[macro_use]
 extern crate failure;
@@ -22,7 +20,9 @@ extern crate stq_acl;
 extern crate stq_db;
 extern crate stq_http;
 extern crate stq_logging;
+extern crate stq_roles;
 extern crate stq_router;
+extern crate stq_types;
 extern crate tokio_core;
 extern crate tokio_postgres;
 extern crate uuid;
@@ -72,7 +72,7 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
 
     let serve = Http::new()
         .serve_addr_handle(&listen_address, &core.handle(), move || {
-            let controller = controller::ControllerImpl::new(db_pool.clone(), config.clone());
+            let controller = controller::ControllerImpl::new(&db_pool, &config);
 
             // Prepare application
             let app = Application::<errors::Error>::new(controller);

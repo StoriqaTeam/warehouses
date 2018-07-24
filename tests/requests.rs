@@ -4,6 +4,7 @@ extern crate hyper;
 extern crate maplit;
 extern crate serde_json;
 extern crate stq_http;
+extern crate stq_types;
 extern crate tokio_core;
 extern crate warehouses_lib as lib;
 
@@ -12,6 +13,7 @@ pub mod common;
 use hyper::Method;
 use lib::controller::StockSetPayload;
 use lib::models::*;
+use stq_types::*;
 
 #[test]
 fn test_warehouses_service() {
@@ -33,7 +35,7 @@ fn test_warehouses_service() {
 
     let user_id = UserId(123114);
 
-    core.run(http_client.request_with_auth_header::<Option<Role>>(
+    core.run(http_client.request_with_auth_header::<Option<RoleEntry>>(
         Method::Delete,
         format!("{}/roles/by-user-id/{}", base_url, user_id.0),
         None,
@@ -42,8 +44,8 @@ fn test_warehouses_service() {
 
     let store_id = StoreId(423452345);
 
-    let test_user = Role {
-        id: RoleId::new(),
+    let test_user = RoleEntry {
+        id: RoleEntryId::new(),
         user_id,
         role: UserRole::StoreManager(store_id),
     };
@@ -51,7 +53,7 @@ fn test_warehouses_service() {
     let test_user_auth_header = test_user.user_id.0.to_string();
 
     {
-        let res = core.run(http_client.request_with_auth_header::<Role>(
+        let res = core.run(http_client.request_with_auth_header::<RoleEntry>(
             Method::Post,
             format!("{}/roles", base_url),
             Some(serde_json::to_string(&test_user).unwrap()),

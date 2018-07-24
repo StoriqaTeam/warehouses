@@ -1,42 +1,24 @@
-use super::StoreId;
 use super::ValueContainer;
 use geo::Point as GeoPoint;
 use stq_db::statement::*;
+use stq_types::*;
 use tokio_postgres;
-use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, Display, PartialEq, FromStr, Hash, Serialize, Deserialize)]
-pub struct WarehouseId(pub Uuid);
-impl WarehouseId {
-    pub fn new() -> Self {
-        WarehouseId(Uuid::new_v4())
-    }
-}
-
-#[derive(Clone, Debug, Display, PartialEq, FromStr, Hash, Serialize, Deserialize)]
-pub struct WarehouseSlug(pub String);
-
-#[derive(Clone, Debug, PartialEq, Hash)]
-pub enum WarehouseIdentifier {
-    Id(WarehouseId),
-    Slug(WarehouseSlug),
-}
-
-const ID_COLUMN: &'static str = "id";
-const STORE_ID_COLUMN: &'static str = "store_id";
-const SLUG_COLUMN: &'static str = "slug";
-const NAME_COLUMN: &'static str = "name";
-const LOCATION_COLUMN: &'static str = "location";
-const ADMINISTRATIVE_AREA_LEVEL_1_COLUMN: &'static str = "administrative_area_level_1";
-const ADMINISTRATIVE_AREA_LEVEL_2_COLUMN: &'static str = "administrative_area_level_2";
-const COUNTRY_COLUMN: &'static str = "country";
-const LOCALITY_COLUMN: &'static str = "locality";
-const POLITICAL_COLUMN: &'static str = "political";
-const POSTAL_CODE_COLUMN: &'static str = "postal_code";
-const ROUTE_COLUMN: &'static str = "route";
-const STREET_NUMBER_COLUMN: &'static str = "street_number";
-const ADDRESS_COLUMN: &'static str = "address";
-const PLACE_ID_COLUMN: &'static str = "place_id";
+const ID_COLUMN: &str = "id";
+const STORE_ID_COLUMN: &str = "store_id";
+const SLUG_COLUMN: &str = "slug";
+const NAME_COLUMN: &str = "name";
+const LOCATION_COLUMN: &str = "location";
+const ADMINISTRATIVE_AREA_LEVEL_1_COLUMN: &str = "administrative_area_level_1";
+const ADMINISTRATIVE_AREA_LEVEL_2_COLUMN: &str = "administrative_area_level_2";
+const COUNTRY_COLUMN: &str = "country";
+const LOCALITY_COLUMN: &str = "locality";
+const POLITICAL_COLUMN: &str = "political";
+const POSTAL_CODE_COLUMN: &str = "postal_code";
+const ROUTE_COLUMN: &str = "route";
+const STREET_NUMBER_COLUMN: &str = "street_number";
+const ADDRESS_COLUMN: &str = "address";
+const PLACE_ID_COLUMN: &str = "place_id";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Warehouse {
@@ -322,7 +304,7 @@ impl Filter for WarehouseFilter {
 
 impl From<WarehouseIdentifier> for WarehouseFilter {
     fn from(v: WarehouseIdentifier) -> Self {
-        use self::WarehouseIdentifier::*;
+        use stq_types::WarehouseIdentifier::*;
 
         match v {
             Id(id) => Self {

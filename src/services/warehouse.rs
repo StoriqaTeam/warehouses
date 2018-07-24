@@ -6,10 +6,12 @@ use types::DbPool;
 use futures::future;
 use futures::prelude::*;
 use std::rc::Rc;
+use stq_roles;
+use stq_types::*;
 
 #[derive(Clone, Debug)]
 pub enum RoleRemoveFilter {
-    Id(RoleId),
+    Id(RoleEntryId),
     Meta((UserId, Option<UserRole>)),
 }
 
@@ -45,11 +47,6 @@ pub trait WarehouseService {
 
     /// Find all products with id in all warehouses
     fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<Stock>>;
-
-    fn get_roles_for_user(&self, user_id: UserId) -> ServiceFuture<Vec<Role>>;
-    fn create_role(&self, item: Role) -> ServiceFuture<Role>;
-    fn remove_role(&self, filter: RoleRemoveFilter) -> ServiceFuture<Option<Role>>;
-    fn remove_all_roles(&self, user_id: UserId) -> ServiceFuture<Vec<Role>>;
 }
 
 #[derive(Clone)]
@@ -57,7 +54,7 @@ pub struct RepoFactory {
     pub warehouse_repo_factory: Rc<Fn() -> Box<WarehouseRepo>>,
     pub warehouse_slug_sequence_factory: Rc<Fn() -> Box<WarehouseSlugSequence>>,
     pub warehouse_products_repo_factory: Rc<Fn() -> Box<StocksRepo>>,
-    pub warehouse_roles_repo_factory: Rc<Fn() -> Box<RolesRepo>>,
+    pub warehouse_roles_repo_factory: Rc<Fn() -> Box<stq_roles::repo::RolesRepo<UserRole>>>,
 }
 
 pub struct WarehouseServiceImpl {
@@ -325,91 +322,6 @@ impl WarehouseService for WarehouseServiceImpl {
                         "Failed to get warehouse product {}",
                         warehouse_product_id.0
                     )).into()
-                }),
-        )
-    }
-
-    fn get_roles_for_user(&self, user_id: UserId) -> ServiceFuture<Vec<Role>> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_roles_repo_factory)().select(
-                        conn,
-                        RoleFilter {
-                            user_id: Some(user_id.into()),
-                            ..Default::default()
-                        },
-                    )
-                })
-                .map_err(move |e| {
-                    e.context(format!("Failed to get roles for user {}", user_id.0))
-                        .into()
-                }),
-        )
-    }
-    fn create_role(&self, item: Role) -> ServiceFuture<Role> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run({
-                    let item = item.clone();
-                    move |conn| {
-                        (repo_factory.warehouse_roles_repo_factory)().insert_exactly_one(conn, item)
-                    }
-                })
-                .map_err(move |e| {
-                    e.context(format!("Failed to create role: {:?}", item))
-                        .into()
-                }),
-        )
-    }
-    fn remove_role(&self, filter: RoleRemoveFilter) -> ServiceFuture<Option<Role>> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run({
-                    let filter = filter.clone();
-                    move |conn| {
-                        (repo_factory.warehouse_roles_repo_factory)().delete(
-                            conn,
-                            match filter {
-                                RoleRemoveFilter::Id(id) => RoleFilter {
-                                    id: Some(id).map(From::from),
-                                    ..Default::default()
-                                },
-                                RoleRemoveFilter::Meta((user_id, role)) => RoleFilter {
-                                    user_id: Some(user_id).map(From::from),
-                                    role: role.map(From::from),
-                                    ..Default::default()
-                                },
-                            },
-                        )
-                    }
-                })
-                .map(|mut v| v.pop())
-                .map_err(move |e| {
-                    e.context(format!("Failed to remove role: {:?}", filter))
-                        .into()
-                }),
-        )
-    }
-    fn remove_all_roles(&self, user_id: UserId) -> ServiceFuture<Vec<Role>> {
-        let repo_factory = self.repo_factory.clone();
-        Box::new(
-            self.db_pool
-                .run(move |conn| {
-                    (repo_factory.warehouse_roles_repo_factory)().delete(
-                        conn,
-                        RoleFilter {
-                            user_id: Some(user_id.into()),
-                            ..Default::default()
-                        },
-                    )
-                })
-                .map_err(move |e| {
-                    e.context(format!("Failed to remove all roles for user {}", user_id.0))
-                        .into()
                 }),
         )
     }

@@ -7,8 +7,8 @@ use stq_acl::*;
 use stq_db::repo::*;
 use stq_db::sequence::*;
 
-const TABLE: &'static str = "warehouses";
-const SLUG_SEQUENCE: &'static str = "warehouse_slug_seq";
+const TABLE: &str = "warehouses";
+const SLUG_SEQUENCE: &str = "warehouse_slug_seq";
 
 pub trait WarehouseRepo:
     DbRepo<Warehouse, Warehouse, WarehouseFilter, WarehouseUpdater, RepoError>
@@ -25,7 +25,7 @@ pub fn make_su_repo() -> Repo {
 }
 
 fn check_acl(
-    user_roles: Vec<Role>,
+    user_roles: Vec<RoleEntry>,
     entry: Warehouse,
     action: Action,
 ) -> Verdict<(Warehouse, Action), failure::Error> {
@@ -61,7 +61,7 @@ fn check_acl(
     )
 }
 
-pub fn make_repo(user_roles: Vec<Role>) -> Repo {
+pub fn make_repo(user_roles: Vec<RoleEntry>) -> Repo {
     make_su_repo().with_afterop_acl_engine({
         move |(entry, action)| check_acl(user_roles.clone(), entry, action)
     })

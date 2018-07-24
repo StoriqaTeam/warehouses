@@ -34,5 +34,7 @@ stq_acl = { path = "vendor/libstqbackend/acl" }
 stq_db = { path = "vendor/libstqbackend/db" }
 stq_http = { path = "vendor/libstqbackend/http" }
 stq_logging = { path = "vendor/libstqbackend/logging" }
+stq_roles = { path = "vendor/libstqbackend/roles" }
 stq_router = { path = "vendor/libstqbackend/router" }
+stq_types = { path = "vendor/libstqbackend/types" }
 uuid = { version = "*", features = ["serde", "v4"] }

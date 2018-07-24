@@ -5,8 +5,9 @@ use futures::prelude::*;
 use std::rc::Rc;
 use stq_acl::*;
 use stq_db::repo::*;
+use stq_types::*;
 
-static TABLE: &'static str = "stocks";
+const TABLE: &str = "stocks";
 
 pub trait StocksRepo: DbRepo<Stock, Stock, StockFilter, StockUpdater, RepoError> {}
 
@@ -20,8 +21,8 @@ pub fn make_su_repo() -> Repo {
 }
 
 fn check_acl(
-    warehouse_source: Rc<Fn(WarehouseId) -> Box<Future<Item = Warehouse, Error = failure::Error>>>,
-    user_roles: Vec<Role>,
+    warehouse_source: &Rc<Fn(WarehouseId) -> Box<Future<Item = Warehouse, Error = failure::Error>>>,
+    user_roles: Vec<RoleEntry>,
     entry: Stock,
     action: Action,
 ) -> Verdict<(Stock, Action), failure::Error> {
@@ -62,12 +63,10 @@ fn check_acl(
 }
 
 pub fn make_repo(
-    user_roles: Vec<Role>,
+    user_roles: Vec<RoleEntry>,
     warehouse_source: Rc<Fn(WarehouseId) -> Box<Future<Item = Warehouse, Error = failure::Error>>>,
 ) -> Repo {
     make_su_repo().with_afterop_acl_engine({
-        move |(entry, action)| {
-            check_acl(warehouse_source.clone(), user_roles.clone(), entry, action)
-        }
+        move |(entry, action)| check_acl(&warehouse_source, user_roles.clone(), entry, action)
     })
 }

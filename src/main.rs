@@ -1,5 +1,5 @@
-extern crate warehouses_lib as lib;
 extern crate stq_logging;
+extern crate warehouses_lib as lib;
 
 fn main() {
     let config = lib::Config::new()
