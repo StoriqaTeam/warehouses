@@ -12,6 +12,8 @@ pub enum Error {
     ParseError,
     #[fail(display = "Invalid route")]
     InvalidRoute,
+    #[fail(display = "Not found")]
+    NotFound,
 }
 
 impl Codeable for Error {
@@ -22,6 +24,7 @@ impl Codeable for Error {
             MissingUserId | UserIdParse { .. } => StatusCode::BadRequest,
             ParseError => StatusCode::UnprocessableEntity,
             InvalidRoute => StatusCode::NotFound,
+            NotFound => StatusCode::NotFound,
         }
     }
 }

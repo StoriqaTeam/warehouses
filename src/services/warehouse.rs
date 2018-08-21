@@ -1,19 +1,17 @@
 use super::ServiceFuture;
+use errors::*;
 use models::*;
+use repos;
 use repos::*;
 use types::DbPool;
 
+use failure;
 use futures::future;
 use futures::prelude::*;
 use std::rc::Rc;
-use stq_roles;
+use stq_api::warehouses::*;
+use stq_db::repo::*;
 use stq_types::*;
-
-#[derive(Clone, Debug)]
-pub enum RoleRemoveFilter {
-    Id(RoleEntryId),
-    Meta((UserId, Option<UserRole>)),
-}
 
 pub trait WarehouseService {
     fn create_warehouse(&self, new_warehouse: WarehouseInput) -> ServiceFuture<Warehouse>;
@@ -53,13 +51,57 @@ pub trait WarehouseService {
 pub struct RepoFactory {
     pub warehouse_repo_factory: Rc<Fn() -> Box<WarehouseRepo>>,
     pub warehouse_slug_sequence_factory: Rc<Fn() -> Box<WarehouseSlugSequence>>,
-    pub warehouse_products_repo_factory: Rc<Fn() -> Box<StocksRepo>>,
-    pub warehouse_roles_repo_factory: Rc<Fn() -> Box<stq_roles::repo::RolesRepo<UserRole>>>,
+    pub stocks_repo_factory: Rc<Fn() -> Box<StocksRepo>>,
 }
 
 pub struct WarehouseServiceImpl {
     pub repo_factory: RepoFactory,
     pub db_pool: DbPool,
+}
+
+impl WarehouseServiceImpl {
+    pub fn new(db_pool: &DbPool, login: &UserLogin) -> Self {
+        Self {
+            db_pool: db_pool.clone(),
+            repo_factory: RepoFactory {
+                warehouse_repo_factory: Rc::new({
+                    let login = login.clone();
+                    move || Box::new(repos::warehouses::make_repo(login.clone()))
+                }),
+                warehouse_slug_sequence_factory: Rc::new({
+                    || Box::new(repos::warehouses::make_slug_sequence())
+                }),
+                stocks_repo_factory: Rc::new({
+                    let login = login.clone();
+                    let warehouse_source = Rc::new({
+                        let db_pool = db_pool.clone();
+                        move |warehouse_id: WarehouseId| {
+                            Box::new(
+                                db_pool
+                                    .run(move |conn| {
+                                        repos::warehouses::make_su_repo().select_exactly_one(
+                                            conn,
+                                            WarehouseFilter {
+                                                id: Some(warehouse_id.into()),
+                                                ..Default::default()
+                                            },
+                                        )
+                                    })
+                                    .map(|v| v.0),
+                            )
+                                as Box<Future<Item = Warehouse, Error = failure::Error>>
+                        }
+                    });
+                    move || {
+                        Box::new(repos::stocks::make_repo(
+                            login.clone(),
+                            warehouse_source.clone(),
+                        ))
+                    }
+                }),
+            },
+        }
+    }
 }
 
 impl WarehouseService for WarehouseServiceImpl {
@@ -80,12 +122,16 @@ impl WarehouseService for WarehouseServiceImpl {
                                 move |(slug, conn)| {
                                     (f)().insert_exactly_one(
                                         conn,
-                                        new_warehouse.with_slug(WarehouseSlug(slug.to_string())),
+                                        DbWarehouse(
+                                            new_warehouse
+                                                .with_slug(WarehouseSlug(slug.to_string())),
+                                        ),
                                     )
                                 }
                             })
                     }
                 })
+                .map(|v| v.0)
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to create warehouse with data: {:?}",
@@ -102,7 +148,7 @@ impl WarehouseService for WarehouseServiceImpl {
                 .run(move |conn| {
                     (repo_factory.warehouse_repo_factory)().select(conn, warehouse_id.into())
                 })
-                .map(|mut v| v.pop()),
+                .map(|mut v| v.pop().map(|v| v.0)),
         )
     }
 
@@ -119,6 +165,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         },
                     )
                 })
+                .map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get warehouses for store: {}",
@@ -149,7 +196,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         )
                     }
                 })
-                .map(|mut v| v.pop())
+                .map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to update warehouse {:?} with data {:?}",
@@ -172,7 +219,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         (repo_factory.warehouse_repo_factory)().delete(conn, warehouse_id.into())
                     }
                 })
-                .map(|mut v| v.pop())
+                .map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!("Failed to delete warehouse {:?}", warehouse_id))
                         .into()
@@ -192,6 +239,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         },
                     )
                 })
+                .map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(|e| e.context("Failed to delete all warehouses").into()),
         )
     }
@@ -206,21 +254,54 @@ impl WarehouseService for WarehouseServiceImpl {
         Box::new(
             self.db_pool
                 .run({
-                    let repo_factory = repo_factory.clone();
                     move |conn| {
-                        let repo = (repo_factory.warehouse_products_repo_factory)();
+                        future::ok(conn)
+                            .and_then({
+                                let repo_factory = repo_factory.clone();
+                                move |conn| {
+                                    let repo = (repo_factory.warehouse_repo_factory)();
 
-                        repo.insert_exactly_one(
-                            conn,
-                            Stock {
-                                id: StockId::new(),
-                                warehouse_id,
-                                product_id,
-                                quantity,
-                            },
-                        )
+                                    repo.select(
+                                        conn,
+                                        WarehouseFilter {
+                                            id: Some(warehouse_id.into()),
+                                            ..Default::default()
+                                        },
+                                    ).and_then(move |(v, conn)| {
+                                        if v.is_empty() {
+                                            Err((
+                                                format_err!(
+                                                    "Warehouse {} does not exist",
+                                                    warehouse_id
+                                                ).context(Error::NotFound)
+                                                    .into(),
+                                                conn,
+                                            ))
+                                        } else {
+                                            Ok(conn)
+                                        }
+                                    })
+                                }
+                            })
+                            .and_then({
+                                let repo_factory = repo_factory.clone();
+                                move |conn| {
+                                    let repo = (repo_factory.stocks_repo_factory)();
+
+                                    repo.insert_exactly_one(
+                                        conn,
+                                        DbStock(Stock {
+                                            id: StockId::new(),
+                                            warehouse_id,
+                                            product_id,
+                                            quantity,
+                                        }),
+                                    )
+                                }
+                            })
                     }
                 })
+                .map(|v| v.0)
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to set product {} in warehouse {} to quantity {}",
@@ -238,7 +319,7 @@ impl WarehouseService for WarehouseServiceImpl {
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)().select(
+                    (repo_factory.stocks_repo_factory)().select(
                         conn,
                         StockFilter {
                             warehouse_id: Some(warehouse_id.into()),
@@ -247,7 +328,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         },
                     )
                 })
-                .map(|mut warehouse_products| warehouse_products.pop())
+                .map(|mut warehouse_products| warehouse_products.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get product {} in warehouse {}",
@@ -261,7 +342,7 @@ impl WarehouseService for WarehouseServiceImpl {
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)().select(
+                    (repo_factory.stocks_repo_factory)().select(
                         conn,
                         StockFilter {
                             warehouse_id: Some(warehouse_id.into()),
@@ -271,6 +352,7 @@ impl WarehouseService for WarehouseServiceImpl {
                 })
                 .map(|v| {
                     v.into_iter()
+                        .map(|v| v.0)
                         .map(<(ProductId, StockMeta)>::from)
                         .collect::<StockMap>()
                 })
@@ -287,7 +369,7 @@ impl WarehouseService for WarehouseServiceImpl {
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)().select(
+                    (repo_factory.stocks_repo_factory)().select(
                         conn,
                         StockFilter {
                             product_id: Some(product_id.into()),
@@ -295,6 +377,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         },
                     )
                 })
+                .map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to find warehouse products with product_id {}",
@@ -308,7 +391,7 @@ impl WarehouseService for WarehouseServiceImpl {
         Box::new(
             self.db_pool
                 .run(move |conn| {
-                    (repo_factory.warehouse_products_repo_factory)().select(
+                    (repo_factory.stocks_repo_factory)().select(
                         conn,
                         StockFilter {
                             id: Some(warehouse_product_id.into()),
@@ -316,7 +399,7 @@ impl WarehouseService for WarehouseServiceImpl {
                         },
                     )
                 })
-                .map(|mut v| v.pop())
+                .map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get warehouse product {}",

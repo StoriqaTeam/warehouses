@@ -1,200 +1,155 @@
 extern crate futures;
-extern crate hyper;
 #[macro_use]
 extern crate maplit;
 extern crate serde_json;
+extern crate stq_api;
 extern crate stq_http;
+extern crate stq_roles;
 extern crate stq_types;
+extern crate tokio;
 extern crate tokio_core;
 extern crate warehouses_lib as lib;
 
 pub mod common;
 
-use hyper::Method;
-use lib::controller::StockSetPayload;
+use futures::{future, prelude::*};
 use lib::models::*;
+use stq_api::{roles::*, rpc_client::RestApiClient, warehouses::*};
+use stq_roles::models::RoleSearchTerms;
 use stq_types::*;
 
 #[test]
-fn test_warehouses_service() {
-    let common::Context {
-        mut core,
-        http_client,
-        base_url,
-    } = common::setup();
+fn test_services() {
+    let base_url = common::setup();
 
-    let superuser_id = UserId(1);
-    let superuser_auth_header = superuser_id.0.to_string();
+    tokio::run(future::ok(()).map(move |_| {
+        let superuser_id = UserId(1);
+        let su_rpc_client = RestApiClient::new(&base_url, Some(superuser_id));
 
-    core.run(http_client.request_with_auth_header::<Vec<Warehouse>>(
-        Method::Delete,
-        format!("{}/warehouses", base_url),
-        None,
-        Some(superuser_auth_header.clone()),
-    )).unwrap();
+        su_rpc_client.delete_all_warehouses().wait().unwrap();
 
-    let user_id = UserId(123114);
+        let user_id = UserId(123114);
+        let store_id = StoreId(423452345);
 
-    core.run(http_client.request_with_auth_header::<Option<RoleEntry>>(
-        Method::Delete,
-        format!("{}/roles/by-user-id/{}", base_url, user_id.0),
-        None,
-        Some(superuser_auth_header.clone()),
-    )).unwrap();
-
-    let store_id = StoreId(423452345);
-
-    let test_user = RoleEntry {
-        id: RoleEntryId::new(),
-        user_id,
-        role: UserRole::StoreManager(store_id),
-    };
-
-    let test_user_auth_header = test_user.user_id.0.to_string();
-
-    {
-        let res = core.run(http_client.request_with_auth_header::<RoleEntry>(
-            Method::Post,
-            format!("{}/roles", base_url),
-            Some(serde_json::to_string(&test_user).unwrap()),
-            Some(superuser_auth_header.clone()),
-        )).unwrap();
-
-        assert_eq!(test_user, res);
-    }
-
-    let mut warehouse = {
-        let id = WarehouseId::new();
-        let input = WarehouseInput {
-            id: id.clone(),
-            name: Some("My warehouse".into()),
-            ..WarehouseInput::new(store_id)
+        RolesClient::<UserRole>::remove_role(
+            &su_rpc_client,
+            RoleSearchTerms::Meta((user_id, None)),
+        ).wait()
+            .unwrap();
+        let test_user = RoleEntry {
+            id: RoleEntryId::new(),
+            user_id,
+            role: UserRole::StoreManager(store_id),
         };
 
-        let res = core.run(http_client.request_with_auth_header::<Warehouse>(
-            Method::Post,
-            format!("{}/warehouses", base_url),
-            Some(serde_json::to_string(&input).unwrap()),
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
+        {
+            let res = su_rpc_client.create_role(test_user.clone()).wait().unwrap();
 
-        let v = input.with_slug(res.slug.clone());
+            assert_eq!(test_user, res);
+        }
 
-        assert_eq!(res, v);
+        let rpc_client = RestApiClient::new(&base_url, Some(user_id));
 
-        v
-    };
+        let mut warehouse = {
+            let id = WarehouseId::new();
+            let input = WarehouseInput {
+                id: id.clone(),
+                name: Some("My warehouse".into()),
+                location: Some((37.62, 55.75).into()),
+                ..WarehouseInput::new(store_id)
+            };
 
-    {
-        let updater = WarehouseUpdateData {
-            name: Some(Some("My warehouse".to_string()).into()),
-            ..Default::default()
+            let res = rpc_client.create_warehouse(input.clone()).wait().unwrap();
+
+            let v = input.with_slug(res.slug.clone());
+
+            assert_eq!(res, v);
+
+            v
         };
 
-        let res = core.run(http_client.request_with_auth_header::<Option<Warehouse>>(
-            Method::Put,
-            format!("{}/warehouses/by-id/{}", base_url, warehouse.id.0),
-            Some(serde_json::to_string(&updater).unwrap()),
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
+        {
+            let updater = WarehouseUpdateData {
+                name: Some(Some("My warehouse".to_string()).into()),
+                ..Default::default()
+            };
 
-        warehouse.name = Some("My warehouse".to_string());
+            let res = rpc_client
+                .update_warehouse(warehouse.id.into(), updater)
+                .wait()
+                .unwrap();
 
-        assert_eq!(Some(warehouse.clone()), res);
-    }
+            warehouse.name = Some("My warehouse".to_string());
 
-    let mut warehouse_product = {
-        let new_product_id = ProductId(2341241);
-        let quantity = Quantity(4433);
+            assert_eq!(Some(warehouse.clone()), res);
+        }
 
-        let update_data = StockSetPayload { quantity };
+        let mut warehouse_product = {
+            let new_product_id = ProductId(2341241);
+            let quantity = Quantity(4433);
 
-        let res = core.run(http_client.request_with_auth_header::<Stock>(
-            Method::Put,
-            format!(
-                "{}/warehouses/by-id/{}/products/{}",
-                base_url, warehouse.id.0, new_product_id.0
-            ),
-            Some(serde_json::to_string(&update_data).unwrap()),
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
+            let res = rpc_client
+                .set_product_in_warehouse(warehouse.id, new_product_id, quantity)
+                .wait()
+                .unwrap();
 
-        let (id, _warehouse_id, _product_id, _meta) =
-            <(StockId, WarehouseId, ProductId, StockMeta)>::from(res.clone());
+            let (id, _warehouse_id, _product_id, _meta) =
+                <(StockId, WarehouseId, ProductId, StockMeta)>::from(res.clone());
 
-        let expectation = Stock {
-            id,
-            warehouse_id: warehouse.id,
-            product_id: new_product_id,
-            quantity,
+            let expectation = Stock {
+                id,
+                warehouse_id: warehouse.id,
+                product_id: new_product_id,
+                quantity,
+            };
+
+            assert_eq!(expectation, res.clone());
+
+            res
         };
 
-        assert_eq!(expectation, res.clone());
+        {
+            let quantity = Quantity(7634);
 
-        res
-    };
+            let res = rpc_client
+                .set_product_in_warehouse(warehouse.id, warehouse_product.product_id, quantity)
+                .wait()
+                .unwrap();
+            warehouse_product.quantity = quantity;
 
-    {
-        let update_data = StockSetPayload {
-            quantity: Quantity(7634),
-        };
+            let expectation = warehouse_product.clone();
 
-        let res = core.run(http_client.request_with_auth_header::<Stock>(
-            Method::Put,
-            format!(
-                "{}/warehouses/by-id/{}/products/{}",
-                base_url, warehouse.id.0, warehouse_product.product_id.0
-            ),
-            Some(serde_json::to_string(&update_data).unwrap()),
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
+            assert_eq!(expectation, res.clone());
+        }
 
-        warehouse_product.quantity = update_data.quantity;
+        {
+            let (_id, _warehouse_id, product_id, meta) =
+                <(StockId, WarehouseId, ProductId, StockMeta)>::from(warehouse_product.clone());
 
-        let expectation = warehouse_product.clone();
+            let expectation = hashmap! {
+                product_id => meta,
+            };
+            let result = rpc_client
+                .list_products_in_warehouse(warehouse_product.warehouse_id)
+                .wait()
+                .unwrap();
 
-        assert_eq!(expectation, res.clone());
-    }
+            assert_eq!(expectation, result);
+        }
 
-    {
-        let (_id, _warehouse_id, product_id, meta) =
-            <(StockId, WarehouseId, ProductId, StockMeta)>::from(warehouse_product.clone());
+        {
+            let expectation = Some(warehouse_product.clone());
+            let result = rpc_client
+                .get_product_in_warehouse(
+                    warehouse_product.warehouse_id,
+                    warehouse_product.product_id,
+                )
+                .wait()
+                .unwrap();
 
-        let expectation = hashmap! {
-            product_id => meta,
-        };
-        let result = core.run(http_client.request_with_auth_header::<StockMap>(
-            Method::Get,
-            format!(
-                "{}/warehouses/by-id/{}/products",
-                base_url, warehouse_product.warehouse_id.0
-            ),
-            None,
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
+            assert_eq!(expectation, result);
+        }
 
-        assert_eq!(expectation, result);
-    }
-
-    {
-        let expectation = Some(warehouse_product.clone());
-        let result = core.run(http_client.request_with_auth_header::<Option<Stock>>(
-            Method::Get,
-            format!(
-                "{}/warehouses/by-id/{}/products/{}",
-                base_url, warehouse_product.warehouse_id.0, warehouse_product.product_id.0
-            ),
-            None,
-            Some(test_user_auth_header.clone()),
-        )).unwrap();
-
-        assert_eq!(expectation, result);
-    }
-
-    core.run(http_client.request_with_auth_header::<Vec<Warehouse>>(
-        Method::Delete,
-        format!("{}/warehouses", base_url),
-        None,
-        Some(superuser_auth_header.clone()),
-    )).unwrap();
+        su_rpc_client.delete_all_warehouses().wait().unwrap();
+    }));
 }

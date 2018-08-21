@@ -3,6 +3,7 @@ use errors::*;
 use failure;
 use serde_json::{from_value, to_value, Value};
 use stq_roles;
+pub use stq_roles::models::RepoLogin;
 use stq_types::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -52,3 +53,5 @@ impl stq_roles::models::RoleModel for UserRole {
 
 pub type RoleEntry = stq_roles::models::RoleEntry<UserRole>;
 pub type RoleFilter = stq_roles::models::RoleFilter<UserRole>;
+
+pub type UserLogin = stq_roles::models::RepoLogin<UserRole>;

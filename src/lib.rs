@@ -17,6 +17,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate stq_acl;
+extern crate stq_api;
 extern crate stq_db;
 extern crate stq_http;
 extern crate stq_logging;
@@ -40,7 +41,6 @@ use tokio_postgres::TlsMode;
 mod config;
 pub mod controller;
 pub mod errors;
-pub mod log;
 pub mod models;
 pub mod repos;
 pub mod services;
@@ -72,7 +72,7 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
 
     let serve = Http::new()
         .serve_addr_handle(&listen_address, &core.handle(), move || {
-            let controller = controller::ControllerImpl::new(&db_pool, &config);
+            let controller = controller::ControllerImpl::new(db_pool.clone(), &config);
 
             // Prepare application
             let app = Application::<errors::Error>::new(controller);

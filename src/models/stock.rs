@@ -1,6 +1,4 @@
-use super::ValueContainer;
-
-use std::collections::HashMap;
+use stq_api::{types::ValueContainer, warehouses::*};
 use stq_db::statement::*;
 use stq_types::*;
 use tokio_postgres::rows::Row;
@@ -10,63 +8,26 @@ const WAREHOUSE_ID_COLUMN: &str = "warehouse_id";
 const PRODUCT_ID_COLUMN: &str = "product_id";
 const QUANTITY_COLUMN: &str = "quantity";
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Stock {
-    pub id: StockId,
-    pub warehouse_id: WarehouseId,
-    pub product_id: ProductId,
-    pub quantity: Quantity,
-}
+pub struct DbStock(pub Stock);
 
-impl From<Row> for Stock {
+impl From<Row> for DbStock {
     fn from(row: Row) -> Self {
-        Self {
+        DbStock(Stock {
             id: StockId(row.get(ID_COLUMN)),
             warehouse_id: WarehouseId(row.get(WAREHOUSE_ID_COLUMN)),
             product_id: ProductId(row.get(PRODUCT_ID_COLUMN)),
             quantity: Quantity(row.get(QUANTITY_COLUMN)),
-        }
+        })
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct StockMeta {
-    pub quantity: Quantity,
-}
-
-impl From<Stock> for (ProductId, StockMeta) {
-    fn from(v: Stock) -> (ProductId, StockMeta) {
-        (
-            v.product_id,
-            StockMeta {
-                quantity: v.quantity,
-            },
-        )
-    }
-}
-
-impl From<Stock> for (StockId, WarehouseId, ProductId, StockMeta) {
-    fn from(v: Stock) -> Self {
-        (
-            v.id,
-            v.warehouse_id,
-            v.product_id,
-            StockMeta {
-                quantity: v.quantity,
-            },
-        )
-    }
-}
-
-pub type StockMap = HashMap<ProductId, StockMeta>;
-
-impl Inserter for Stock {
+impl Inserter for DbStock {
     fn into_insert_builder(self, table: &'static str) -> InsertBuilder {
         InsertBuilder::new(table)
-            .with_arg(ID_COLUMN, self.id.0)
-            .with_arg(PRODUCT_ID_COLUMN, self.product_id.0)
-            .with_arg(QUANTITY_COLUMN, self.quantity.0)
-            .with_arg(WAREHOUSE_ID_COLUMN, self.warehouse_id.0)
+            .with_arg(ID_COLUMN, self.0.id.0)
+            .with_arg(PRODUCT_ID_COLUMN, self.0.product_id.0)
+            .with_arg(QUANTITY_COLUMN, self.0.quantity.0)
+            .with_arg(WAREHOUSE_ID_COLUMN, self.0.warehouse_id.0)
             .with_extra("ON CONFLICT (warehouse_id, product_id) DO UPDATE SET quantity = $3")
     }
 }
