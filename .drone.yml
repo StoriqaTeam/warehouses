@@ -27,7 +27,7 @@ pipeline:
     when:
       event: pull_request
   test:
-    image: rust:1.26-stretch
+    image: rust:1.28-stretch
     environment:
     - CARGO_HOME=deps
     - PGPASSWORD=a1a1a1a1
@@ -36,7 +36,7 @@ pipeline:
     - DATABASE_URL=postgresql://warehouses:warehouses@db-postgresql/warehouses
     commands:
     - rustup component add rustfmt-preview
-    - cargo fmt --all -- --write-mode=diff
+    - cargo fmt -- --check
     - apt-get update && apt-get install -y wget gnupg2 ca-certificates
     - update-ca-certificates
     - wget -q https://www.postgresql.org/media/keys/ACCC4CF8.asc -O - | apt-key add -
@@ -56,7 +56,7 @@ pipeline:
 ###
 
   build:
-    image: rust:1.26-stretch
+    image: rust:1.28-stretch
     environment:
     - CARGO_HOME=deps
     commands:

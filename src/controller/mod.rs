@@ -1,27 +1,27 @@
+pub mod routing;
+
 use config::*;
 use errors::*;
 use models::*;
 use services::*;
-pub mod routing;
 use types::*;
 
-use failure;
-use failure::ResultExt;
-use futures::future;
-use futures::prelude::*;
-use hyper;
-use hyper::{Delete, Get, Headers, Post, Put, Request};
+use failure::{self, ResultExt};
+use futures::{future, prelude::*};
+use hyper::{self, Delete, Get, Headers, Post, Put, Request};
 use std::rc::Rc;
 use stq_api::warehouses::*;
-use stq_http::controller::{Controller, ControllerFuture};
-use stq_http::request_util::{parse_body, serialize_future};
-use stq_roles;
-use stq_roles::models::RepoLogin;
-use stq_roles::service::{get_login_data, RoleService};
+use stq_http::{
+    controller::{Controller, ControllerFuture},
+    request_util::{parse_body, serialize_future},
+};
+use stq_roles::{
+    self,
+    models::RepoLogin,
+    service::{get_login_data, RoleService},
+};
 use stq_router::RouteParser;
 use stq_types::*;
-
-pub type ServiceFactoryFuture<T> = Box<Future<Item = Box<T>, Error = failure::Error>>;
 
 pub const SUPERADMIN_USER: UserId = UserId(1);
 
