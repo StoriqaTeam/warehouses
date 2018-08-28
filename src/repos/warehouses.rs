@@ -24,7 +24,7 @@ pub fn make_su_repo() -> Repo {
 
 type AclContext = (DbWarehouse, Action);
 
-fn check_acl(login: UserLogin, (entry, _action): &mut AclContext) -> bool {
+fn check_acl(login: UserLogin, (entry, action): &mut AclContext) -> bool {
     use self::RepoLogin::*;
     use models::UserRole::*;
 
@@ -43,6 +43,11 @@ fn check_acl(login: UserLogin, (entry, _action): &mut AclContext) -> bool {
                 }
             }
         }
+    }
+
+    // Allow read-only access for all users
+    if *action == Action::Select {
+        return true;
     }
 
     false
