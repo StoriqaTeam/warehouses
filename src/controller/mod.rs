@@ -1,5 +1,3 @@
-pub mod routing;
-
 use config::*;
 use errors::*;
 use models::*;
@@ -20,7 +18,6 @@ use stq_roles::{
     models::RepoLogin,
     service::{get_login_data, RoleService},
 };
-use stq_router::RouteParser;
 use stq_types::*;
 
 pub const SUPERADMIN_USER: UserId = UserId(1);
@@ -33,7 +30,6 @@ pub struct ServiceFactory {
 
 pub struct ControllerImpl {
     db_pool: DbPool,
-    route_parser: Rc<RouteParser<Route>>,
     service_factory: ServiceFactory,
 }
 
@@ -64,7 +60,6 @@ impl ControllerImpl {
                 }
             },
             db_pool,
-            route_parser: Rc::new(routing::make_router()),
         }
     }
 }
@@ -89,9 +84,8 @@ impl Controller for ControllerImpl {
         let (method, uri, _, headers, payload) = request.deconstruct();
 
         let service_factory = self.service_factory.clone();
-        let route_parser = self.route_parser.clone();
 
-        let route = route_parser.test(uri.path());
+        let route = Route::from_path(uri.path());
 
         Box::new(
             future::result(extract_user_id(&headers))
