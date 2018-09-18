@@ -34,7 +34,10 @@ impl From<tokio_postgres::rows::Row> for DbWarehouse {
             administrative_area_level_1: v.get(ADMINISTRATIVE_AREA_LEVEL_1_COLUMN),
             administrative_area_level_2: v.get(ADMINISTRATIVE_AREA_LEVEL_2_COLUMN),
             country: v.get(COUNTRY_COLUMN),
-            country_code: Some(Alpha3(v.get(COUNTRY_CODE_COLUMN))),
+            country_code: v
+                .try_get(COUNTRY_CODE_COLUMN)
+                .ok()
+                .and_then(|c| c.map(Alpha3)),
             locality: v.get(LOCALITY_COLUMN),
             political: v.get(POLITICAL_COLUMN),
             postal_code: v.get(POSTAL_CODE_COLUMN),
