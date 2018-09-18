@@ -4,6 +4,8 @@ use stq_logging::GrayLogConfig;
 
 use config_crate::{Config as RawConfig, ConfigError, Environment, File};
 
+use sentry_integration::SentryConfig;
+
 /// Service configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Listen {
@@ -24,6 +26,8 @@ pub struct Config {
     pub db: Database,
     /// Graylog settings
     pub graylog: Option<GrayLogConfig>,
+    /// Sentry settings
+    pub sentry: Option<SentryConfig>,
 }
 
 static ENV_PREFIX: &'static str = "STQ_WAREHOUSES";

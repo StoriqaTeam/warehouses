@@ -86,8 +86,7 @@ impl WarehouseServiceImpl {
                                                 ..Default::default()
                                             },
                                         )
-                                    })
-                                    .map(|v| v.0),
+                                    }).map(|v| v.0),
                             )
                                 as Box<Future<Item = Warehouse, Error = failure::Error>>
                         }
@@ -116,8 +115,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             .and_then({
                                 let f = repo_factory.warehouse_slug_sequence_factory.clone();
                                 move |conn| (f)().next_val(conn)
-                            })
-                            .and_then({
+                            }).and_then({
                                 let f = repo_factory.warehouse_repo_factory.clone();
                                 move |(slug, conn)| {
                                     (f)().insert_exactly_one(
@@ -130,8 +128,7 @@ impl WarehouseService for WarehouseServiceImpl {
                                 }
                             })
                     }
-                })
-                .map(|v| v.0)
+                }).map(|v| v.0)
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to create warehouse with data: {:?}",
@@ -147,8 +144,7 @@ impl WarehouseService for WarehouseServiceImpl {
             self.db_pool
                 .run(move |conn| {
                     (repo_factory.warehouse_repo_factory)().select(conn, warehouse_id.into())
-                })
-                .map(|mut v| v.pop().map(|v| v.0)),
+                }).map(|mut v| v.pop().map(|v| v.0)),
         )
     }
 
@@ -164,8 +160,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|data| data.into_iter().map(|v| v.0).collect())
+                }).map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get warehouses for store: {}",
@@ -195,8 +190,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             },
                         )
                     }
-                })
-                .map(|mut v| v.pop().map(|v| v.0))
+                }).map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to update warehouse {:?} with data {:?}",
@@ -218,8 +212,7 @@ impl WarehouseService for WarehouseServiceImpl {
                     move |conn| {
                         (repo_factory.warehouse_repo_factory)().delete(conn, warehouse_id.into())
                     }
-                })
-                .map(|mut v| v.pop().map(|v| v.0))
+                }).map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!("Failed to delete warehouse {:?}", warehouse_id))
                         .into()
@@ -238,8 +231,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|data| data.into_iter().map(|v| v.0).collect())
+                }).map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(|e| e.context("Failed to delete all warehouses").into()),
         )
     }
@@ -267,23 +259,24 @@ impl WarehouseService for WarehouseServiceImpl {
                                             id: Some(warehouse_id.into()),
                                             ..Default::default()
                                         },
-                                    ).and_then(move |(v, conn)| {
-                                        if v.is_empty() {
-                                            Err((
-                                                format_err!(
-                                                    "Warehouse {} does not exist",
-                                                    warehouse_id
-                                                ).context(Error::NotFound)
+                                    ).and_then(
+                                        move |(v, conn)| {
+                                            if v.is_empty() {
+                                                Err((
+                                                    format_err!(
+                                                        "Warehouse {} does not exist",
+                                                        warehouse_id
+                                                    ).context(Error::NotFound)
                                                     .into(),
-                                                conn,
-                                            ))
-                                        } else {
-                                            Ok(conn)
-                                        }
-                                    })
+                                                    conn,
+                                                ))
+                                            } else {
+                                                Ok(conn)
+                                            }
+                                        },
+                                    )
                                 }
-                            })
-                            .and_then({
+                            }).and_then({
                                 let repo_factory = repo_factory.clone();
                                 move |conn| {
                                     let repo = (repo_factory.stocks_repo_factory)();
@@ -300,8 +293,7 @@ impl WarehouseService for WarehouseServiceImpl {
                                 }
                             })
                     }
-                })
-                .map(|v| v.0)
+                }).map(|v| v.0)
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to set product {} in warehouse {} to quantity {}",
@@ -327,8 +319,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|mut warehouse_products| warehouse_products.pop().map(|v| v.0))
+                }).map(|mut warehouse_products| warehouse_products.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get product {} in warehouse {}",
@@ -349,14 +340,12 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|v| {
+                }).map(|v| {
                     v.into_iter()
                         .map(|v| v.0)
                         .map(<(ProductId, StockMeta)>::from)
                         .collect::<StockMap>()
-                })
-                .map_err(move |e| {
+                }).map_err(move |e| {
                     e.context(format!(
                         "Failed to list products in warehouse {}",
                         warehouse_id.0
@@ -376,8 +365,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|data| data.into_iter().map(|v| v.0).collect())
+                }).map(|data| data.into_iter().map(|v| v.0).collect())
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to find warehouse products with product_id {}",
@@ -398,8 +386,7 @@ impl WarehouseService for WarehouseServiceImpl {
                             ..Default::default()
                         },
                     )
-                })
-                .map(|mut v| v.pop().map(|v| v.0))
+                }).map(|mut v| v.pop().map(|v| v.0))
                 .map_err(move |e| {
                     e.context(format!(
                         "Failed to get warehouse product {}",

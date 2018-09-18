@@ -35,7 +35,7 @@ fn test_services() {
             &su_rpc_client,
             RoleSearchTerms::Meta((user_id, None)),
         ).wait()
-            .unwrap();
+        .unwrap();
         let test_user = RoleEntry {
             id: RoleEntryId::new(),
             user_id,
@@ -143,8 +143,7 @@ fn test_services() {
                 .get_product_in_warehouse(
                     warehouse_product.warehouse_id,
                     warehouse_product.product_id,
-                )
-                .wait()
+                ).wait()
                 .unwrap();
 
             assert_eq!(expectation, result);
