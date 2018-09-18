@@ -1,0 +1,1 @@
+ALTER TABLE warehouses DROP COLUMN IF EXISTS country_code;

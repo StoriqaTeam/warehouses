@@ -12,6 +12,7 @@ const LOCATION_COLUMN: &str = "location";
 const ADMINISTRATIVE_AREA_LEVEL_1_COLUMN: &str = "administrative_area_level_1";
 const ADMINISTRATIVE_AREA_LEVEL_2_COLUMN: &str = "administrative_area_level_2";
 const COUNTRY_COLUMN: &str = "country";
+const COUNTRY_CODE_COLUMN: &str = "country_code";
 const LOCALITY_COLUMN: &str = "locality";
 const POLITICAL_COLUMN: &str = "political";
 const POSTAL_CODE_COLUMN: &str = "postal_code";
@@ -33,6 +34,7 @@ impl From<tokio_postgres::rows::Row> for DbWarehouse {
             administrative_area_level_1: v.get(ADMINISTRATIVE_AREA_LEVEL_1_COLUMN),
             administrative_area_level_2: v.get(ADMINISTRATIVE_AREA_LEVEL_2_COLUMN),
             country: v.get(COUNTRY_COLUMN),
+            country_code: Some(Alpha3(v.get(COUNTRY_CODE_COLUMN))),
             locality: v.get(LOCALITY_COLUMN),
             political: v.get(POLITICAL_COLUMN),
             postal_code: v.get(POSTAL_CODE_COLUMN),
@@ -78,6 +80,10 @@ impl Inserter for DbWarehouse {
             b = b.with_arg(COUNTRY_COLUMN, country.to_string());
         }
 
+        if let Some(country_code) = self.0.country_code {
+            b = b.with_arg(COUNTRY_CODE_COLUMN, country_code.to_string());
+        }
+
         if let Some(locality) = self.0.locality {
             b = b.with_arg(LOCALITY_COLUMN, locality);
         }
@@ -120,6 +126,7 @@ pub struct WarehouseFilter {
     pub administrative_area_level_1: Option<ValueContainer<Option<String>>>,
     pub administrative_area_level_2: Option<ValueContainer<Option<String>>>,
     pub country: Option<ValueContainer<Option<String>>>,
+    pub country_code: Option<ValueContainer<Option<Alpha3>>>,
     pub locality: Option<ValueContainer<Option<String>>>,
     pub political: Option<ValueContainer<Option<String>>>,
     pub postal_code: Option<ValueContainer<Option<String>>>,
@@ -169,6 +176,13 @@ impl Filter for WarehouseFilter {
 
         if let Some(country) = self.country {
             b = b.with_filter(COUNTRY_COLUMN, country.value.map(|v| v.to_string()));
+        }
+
+        if let Some(country_code) = self.country_code {
+            b = b.with_filter(
+                COUNTRY_CODE_COLUMN,
+                country_code.value.map(|v| v.to_string()),
+            );
         }
 
         if let Some(locality) = self.locality {
@@ -260,6 +274,10 @@ impl Updater for WarehouseUpdater {
 
         if let Some(country) = data.country {
             b = b.with_value(COUNTRY_COLUMN, country.value);
+        }
+
+        if let Some(country_code) = data.country_code {
+            b = b.with_value(COUNTRY_CODE_COLUMN, country_code.value.map(|v| v.0));
         }
 
         if let Some(locality) = data.locality {

@@ -1,0 +1,1 @@
+ALTER TABLE warehouses ADD COLUMN country_code VARCHAR;
