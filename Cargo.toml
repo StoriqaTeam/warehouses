@@ -39,4 +39,4 @@ tokio = "*"
 tokio-core = "*"
 tokio-postgres = { git = "https://github.com/StoriqaTeam/rust-postgres", features = ["with-geo-0.10", "with-serde_json-1", "with-uuid-0.6"] }
 uuid = { version = "*", features = ["use_std", "v4", "serde"] }
-sentry = "0.3"
+sentry = "0.12"
