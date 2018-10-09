@@ -1,6 +1,7 @@
 use config::*;
 use errors::*;
 use models::*;
+use sentry_integration::log_and_capture_error;
 use services::*;
 use types::*;
 
@@ -11,6 +12,7 @@ use std::rc::Rc;
 use stq_api::warehouses::*;
 use stq_http::{
     controller::{Controller, ControllerFuture},
+    errors::ErrorMessageWrapper,
     request_util::{parse_body, serialize_future},
 };
 use stq_roles::{
@@ -208,6 +210,12 @@ impl Controller for ControllerImpl {
                             .context(Error::InvalidRoute)
                             .into(),
                     ))
+                }).map_err(|err| {
+                    let wrapper = ErrorMessageWrapper::<Error>::from(&err);
+                    if wrapper.inner.code == 500 {
+                        log_and_capture_error(&err);
+                    }
+                    err
                 }),
         )
     }
