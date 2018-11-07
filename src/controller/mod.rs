@@ -94,7 +94,12 @@ impl Controller for ControllerImpl {
                 .map_err(|e| e.context("Failed to extract user ID").into())
                 .and_then({
                     let db_pool = self.db_pool.clone();
-                    move |caller_id| get_login_data(&db_pool, caller_id)
+                    let path = uri.path().to_string();
+                    let method = method.clone();
+                    move |caller_id| {
+                        debug!("Server received Request, method: {}, url: {}, user id: {:?}", method, path, caller_id);
+                        get_login_data(&db_pool, caller_id)
+                    }
                 })
                 .and_then(move |login_data| {
                     let warehouse_service = (service_factory.warehouse)(login_data.clone());
