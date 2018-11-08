@@ -108,12 +108,13 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
         future::ok(())
     });
 
-    let endless_stream = tokio_signal::ctrl_c()
-        .flatten_stream()
-        .take(1u64)
-        .for_each(|()| {
-            info!("Ctrl+C received. Exit");
-            Ok(())
-        });
-    core.run(endless_stream).unwrap();
+    core.run(
+        tokio_signal::ctrl_c()
+            .flatten_stream()
+            .take(1u64)
+            .for_each(|()| {
+                info!("Ctrl+C received. Exit");
+                Ok(())
+            }),
+    ).unwrap();
 }
