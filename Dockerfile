@@ -1,14 +1,15 @@
 FROM debian:stable-slim
 
+ARG env=debug
+
 RUN apt-get update \
   && apt-get install -y wget gnupg2 \
   && sh -c 'wget -q https://www.postgresql.org/media/keys/ACCC4CF8.asc -O - | apt-key add -' \
   && sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ stretch-pgdg main" >> /etc/apt/sources.list.d/pgdg.list' \
   && apt-get update \
   && apt-get install -y libpq5 libmariadbclient18 \
-  && mkdir -p /usr/local/cargo/bin/ \
-  && wget -q https://s3.eu-central-1.amazonaws.com/dumpster.stq/diesel -O /usr/local/cargo/bin/diesel \
-  && chmod +x /usr/local/cargo/bin/diesel \
+  && wget -q https://s3.eu-central-1.amazonaws.com/dumpster.stq/diesel -O /usr/local/bin/diesel \
+  && chmod +x /usr/local/bin/diesel \
   && apt-get purge -y wget \
   && apt-get autoremove -y \
   && apt-get clean -y \
@@ -18,15 +19,13 @@ RUN apt-get update \
   && mkdir -p /app/migrations \
   && chown -R app: /app
 
+COPY target/$env/warehouses /app
 COPY Cargo.toml /app/Cargo.toml
-COPY target/release/warehouses /app
 COPY config /app/config
 COPY migrations /app/migrations
 
 USER app
 WORKDIR /app
 EXPOSE 8000
-
-ENV PATH=$PATH:/usr/local/cargo/bin/
 
 ENTRYPOINT diesel migration run && /app/warehouses
