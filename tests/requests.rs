@@ -34,7 +34,8 @@ fn test_services() {
         RolesClient::<UserRole>::remove_role(
             &su_rpc_client,
             RoleSearchTerms::Meta((user_id, None)),
-        ).wait()
+        )
+        .wait()
         .unwrap();
         let test_user = RoleEntry {
             id: RoleEntryId::new(),
@@ -143,7 +144,8 @@ fn test_services() {
                 .get_product_in_warehouse(
                     warehouse_product.warehouse_id,
                     warehouse_product.product_id,
-                ).wait()
+                )
+                .wait()
                 .unwrap();
 
             assert_eq!(expectation, result);

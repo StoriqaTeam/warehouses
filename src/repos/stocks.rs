@@ -59,7 +59,8 @@ fn check_acl(
 
                     false
                 }
-            }).then(move |v| match v {
+            })
+            .then(move |v| match v {
                 Ok(d) => Ok((d, (entry, action))),
                 Err(e) => Err((e, (entry, action))),
             }),

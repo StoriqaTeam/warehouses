@@ -65,7 +65,8 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
                     .max_size(50)
                     .build(manager, remote)
                     .map_err(|e| format_err!("{}", e)),
-            ).expect("Failed to create connection pool"),
+            )
+            .expect("Failed to create connection pool"),
         )
     };
 
@@ -82,7 +83,8 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
             let app = Application::<errors::Error>::new(controller);
 
             Ok(app)
-        }).unwrap_or_else(|why| {
+        })
+        .unwrap_or_else(|why| {
             error!("Http Server Initialization Error: {}", why);
             exit(1);
         });
@@ -99,7 +101,8 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
                     );
                     Ok(())
                 }
-            }).map_err(|_| ()),
+            })
+            .map_err(|_| ()),
     );
 
     info!("Listening on http://{}", listen_address);
@@ -116,5 +119,6 @@ pub fn start_server<F: FnOnce() + 'static>(config: config::Config, port: Option<
                 info!("Ctrl+C received. Exit");
                 Ok(())
             }),
-    ).unwrap();
+    )
+    .unwrap();
 }
