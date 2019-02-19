@@ -198,6 +198,14 @@ impl Controller for ControllerImpl {
                                 warehouse_service.find_by_product_id(product_id)
                             });
                         }
+                        (Get, Some(Route::Stocks)) => {
+                            return serialize_future({
+                                debug!(
+                                    "Received request to get stocks in all warehouses",
+                                );
+                                warehouse_service.find_products()
+                            });
+                        }
                         (method, Some(Route::Roles(route))) => {
                             let c = stq_roles::routing::Controller {
                                 service: roles_service.into(),
