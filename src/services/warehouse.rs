@@ -45,6 +45,8 @@ pub trait WarehouseService {
 
     /// Find all products with id in all warehouses
     fn find_by_product_id(&self, product_id: ProductId) -> ServiceFuture<Vec<Stock>>;
+    /// Find all products
+    fn find_products(&self) -> ServiceFuture<Vec<Stock>>;
 }
 
 #[derive(Clone)]
@@ -417,6 +419,25 @@ impl WarehouseService for WarehouseServiceImpl {
                         warehouse_product_id.0
                     ))
                     .into()
+                }),
+        )
+    }
+    fn find_products(&self) -> ServiceFuture<Vec<Stock>> {
+        let repo_factory = self.repo_factory.clone();
+        Box::new(
+            self.db_pool
+                .run(move |conn| {
+                    (repo_factory.stocks_repo_factory)().select(
+                        conn,
+                        StockFilter {
+                            ..Default::default()
+                        },
+                    )
+                })
+                .map(|data| data.into_iter().map(|v| v.0).collect())
+                .map_err(move |e| {
+                    e.context(format!("Failed to find warehouse products"))
+                        .into()
                 }),
         )
     }
